@@ -1,0 +1,649 @@
+---
+title: "R For Preprocess and Visualization"
+output:
+  html_document: default
+  pdf_document: default
+---
+# PHD 'HEALTH INSURANCE FRAUD' 
+# Shiva Kumar Pupala, Batch 46, Studentid#2218
+
+##### Set Working directory 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = 'C:/Users/Dinesh Pupala/Desktop/PHD dataset' )
+```
+
+# Business Case
+
+The Client is a health insurance company.They are having a serious Business problem with fradulent claims.In this type of fraud,false or misleading information is provided to a health insurance company in an attempt to have them pay unauthorized benefits to the policy holder,another party or the entity providing services.The offense can be committed by the insured individual or the provider of the health services.Fraud is the abuse of the system and if not recognized and mitigated appropriately, may lead to collapse of the system.
+Currently, customer is intrested in detecting the fradulent providers there by preventing the large chunk of frauds.
+
+# Machine Learning Problem Statement
+
+Due to the fact that the fradulent claims are mocked up data by the providers, they often forms patterns due to the similarity of false claims. We are going to analyze these patterns using Machine learning and build an architecture to detect fradulent providers.
+This would help Business to do a Special Investigation only on a small subset of Providers and take appropiate action if proved guilty.
+
+# Data Exploration
+
+Historic Data has been provided in three parts
+1. Beneficiary Data
+       *Details of the Beneficiary of the insurance services*
+2. In Patient Data
+       *Details of the Claims for In patient services*
+3. Out Patient Data
+       *Details of the Claims for Out patient services*
+4. Fradulent Providers
+       *List of Providers who have been identified to be Fradulent*
+
+###### Preprocess Data
+
+###### Read Train and Test Data
+###### See below list of attributes
+```{r}
+TrainBeneficiary = read.csv("Train_Beneficiarydata-1542865627584.csv",header = T)
+#head(TrainBeneficiary)
+TestBeneficiary = read.csv("Test_Beneficiarydata-1542969243754.csv",header = T)
+#head(TestBeneficiary)
+str(TrainBeneficiary)
+```
+## Read Inpatient Data
+```{r}
+TrainInpatient = read.csv("Train_Inpatientdata-1542865627584.csv",header = T)
+TestInpatient = read.csv("Test_Inpatientdata-1542969243754.csv",header = T)
+#head(TrainInpatient)
+str(TrainInpatient)
+```
+## Read OutPatient Data
+```{r}
+TrainOutpatient = read.csv("Train_Outpatientdata-1542865627584.csv",header = T)
+TestOutpatient = read.csv("Test_Outpatientdata-1542969243754.csv",header = T)
+#head(TrainOutpatient)
+str(TrainOutpatient)
+```
+
+```{r}
+head(TrainBeneficiary)
+```
+```{r}
+head(TrainInpatient)
+```
+```{r}
+head(TrainOutpatient)
+```
+#### Preprocess Beneficiary Data
+
+###### Derive new Attribute 'Age' as difference years betwen DOB and DOD.
+###### Current System Date is used to calculate Age when DOD is not given.
+```{r}
+#str(TrainBeneficiary)
+#Convert data variables to date 
+TrainBeneficiary$DOB <- as.Date(TrainBeneficiary$DOB,format="%m/%d/%Y")
+sum(is.na(TrainBeneficiary$DOB))
+TrainBeneficiary$DOD <- as.Date(TrainBeneficiary$DOD,format = "%m/%d/%Y")
+sum(is.na(TrainBeneficiary$DOD))
+
+TestBeneficiary$DOB <- as.Date(TestBeneficiary$DOB,format="%Y-%m-%d")
+sum(is.na(TestBeneficiary$DOB))
+TestBeneficiary$DOD <- as.Date(TestBeneficiary$DOD,format = "%Y-%m-%d")
+sum(is.na(TestBeneficiary$DOD))
+#Calculate age as difference between DOB and DOD, if DOD is NA use system #date to calculate current age
+TrainBeneficiary$Age <- ifelse(is.na(TrainBeneficiary$DOD),                        difftime(Sys.Date(),TrainBeneficiary$DOB,units=c("days")),                 difftime(TrainBeneficiary$DOD,TrainBeneficiary$DOB,units=c("days")))
+TrainBeneficiary$Age <- as.integer(TrainBeneficiary$Age/365)
+
+TestBeneficiary$Age <- ifelse(is.na(TestBeneficiary$DOD),                        difftime(Sys.Date(),TestBeneficiary$DOB,units=c("days")),                 difftime(TestBeneficiary$DOD,TestBeneficiary$DOB,units=c("days")))
+TestBeneficiary$Age <- as.integer(TestBeneficiary$Age/365)
+
+#convert categorical attributes to factors
+TrainBeneficiary[,4:21] <- apply(TrainBeneficiary[,4:21],2,as.character)
+TrainBeneficiary[,4:21]<-as.data.frame(apply(TrainBeneficiary[,4:21],2,function(x) as.factor(x)),stringsAsFactors=TRUE)
+
+TestBeneficiary[,4:21] <- apply(TestBeneficiary[,4:21],2,as.character)
+TestBeneficiary[,4:21]<-as.data.frame(apply(TestBeneficiary[,4:21],2,function(x) as.factor(x)),stringsAsFactors=TRUE)
+
+# Drop DOB and DOD
+TrainBeneficiary$DOB <- NULL
+TrainBeneficiary$DOD <- NULL
+TestBeneficiary$DOB <- NULL
+TestBeneficiary$DOD <- NULL
+```
+#### Preprocess In Patient Data
+#### Derive new attributes by converting ICD codes using ICD package in R. This package takes sequence of ICD Diagnostic codes and Procedure codes and returns set of boolean categorical attributes indicating the various types of Diagnosis and/or treatment.
+```{r}
+library(icd)
+library(icd.data)
+ClaimDiagCodes <- TrainInpatient[,c(2,11,15,16,17,18,19,20,21,22,23,24)]
+#ClaimDiagCodes
+ClaimDiagCodeslong <- wide_to_long(ClaimDiagCodes)
+ClaimDiags <- as.data.frame(icd9_comorbid_ahrq(ClaimDiagCodeslong))
+nrow(ClaimDiags)
+nrow(TrainInpatient)
+str(ClaimDiags)
+
+ClaimDiagTest <- TestInpatient[,c(2,11,15,16,17,18,19,20,21,22,23,24)]
+#ClaimDiagCodes
+ClaimDiagTestlong <- wide_to_long(ClaimDiagTest)
+ClaimDiagsTest <- as.data.frame(icd9_comorbid_ahrq(ClaimDiagTestlong))
+nrow(ClaimDiagsTest)
+nrow(TestInpatient)
+str(ClaimDiagsTest)
+#head(ClaimDiags)
+```
+```{r}
+ClaimProcCodes <- TrainInpatient[,c(2,25,26,27,28,29,30)]
+str(ClaimProcCodes)
+nrow(ClaimProcCodes)
+ClaimProcCodes <- apply(ClaimProcCodes,2,as.character)
+ClaimProcCodes<- as.data.frame(apply(ClaimProcCodes,2,function(x) as.factor(x)),stringsAsFactors=TRUE)
+ClaimProcCodeslong <- wide_to_long(ClaimProcCodes,icd_labels = c("ClmProcedureCode_1","ClmProcedureCode_2","ClmProcedureCode_3","ClmProcedureCode_4","ClmProcedureCode_5","ClmProcedureCode_6"))
+#ClaimProcCodeslong
+ClaimProcs <- as.data.frame(icd9_comorbid_pccc_dx(ClaimProcCodeslong))
+str(ClaimDiags)
+
+ClaimProcTest <- TestInpatient[,c(2,25,26,27,28,29,30)]
+str(ClaimProcTest)
+nrow(ClaimProcTest)
+ClaimProcTest <- apply(ClaimProcTest,2,as.character)
+ClaimProcTest<- as.data.frame(apply(ClaimProcTest,2,function(x) as.factor(x)),stringsAsFactors=TRUE)
+ClaimProcTestlong <- wide_to_long(ClaimProcTest,icd_labels = c("ClmProcedureCode_1","ClmProcedureCode_2","ClmProcedureCode_3","ClmProcedureCode_4","ClmProcedureCode_5","ClmProcedureCode_6"))
+#ClaimProcTestlong
+ClaimProcTest <- as.data.frame(icd9_comorbid_pccc_dx(ClaimProcTestlong))
+str(ClaimProcTest)
+```
+#### Merge Diagnostic codes and Procedure codes
+```{r}
+ClaimDiags$ClaimID <- row.names(ClaimDiags)
+ClaimProcs$ClaimID <- row.names(ClaimProcs)
+ClaimDiagsTest$ClaimID <- row.names(ClaimDiagsTest)
+ClaimProcTest$ClaimID <- row.names(ClaimProcTest)
+str(ClaimDiags)
+
+library(dplyr)
+InPatientClaims <- left_join(ClaimDiags,ClaimProcs)
+InPatientClaimsTest <- left_join(ClaimDiagsTest,ClaimProcTest)
+str(InPatientClaims)
+```
+#### Remove ICD Codes from In patient Data
+```{r}
+InPatientDetails <- TrainInpatient[,c(1,2,3,4,5,6,7,8,9,10,12,13,14)]
+InPatientDetailsTest <- TestInpatient[,c(1,2,3,4,5,6,7,8,9,10,12,13,14)]
+str(InPatientDetails)
+sum(is.na(InPatientDetails$DischargeDt))
+```
+#### Derive new Attribute AdmitDays as a difference days between Admission date and Discharge date.
+```{r}
+InPatientDetails$AdmissionDt <- as.Date(InPatientDetails$AdmissionDt,format="%m/%d/%Y")
+InPatientDetails$DischargeDt <- as.Date(InPatientDetails$DischargeDt,format = "%m/%d/%Y")
+
+InPatientDetails$AdmitDays <- difftime(InPatientDetails$DischargeDt,InPatientDetails$AdmissionDt,units=c("days"))
+
+InPatientDetails$AdmissionDt <- NULL
+InPatientDetails$DischargeDt <- NULL
+
+InPatientDetailsTest$AdmissionDt <- as.Date(InPatientDetailsTest$AdmissionDt,format="%Y-%m-%d")
+InPatientDetailsTest$DischargeDt <- as.Date(InPatientDetailsTest$DischargeDt,format = "%Y-%m-%d")
+
+InPatientDetailsTest$AdmitDays <- difftime(InPatientDetailsTest$DischargeDt,InPatientDetailsTest$AdmissionDt,units=c("days"))
+
+InPatientDetailsTest$AdmissionDt <- NULL
+InPatientDetailsTest$DischargeDt <- NULL
+```
+#### Merge TrainPatientDetails and TrainClaimDetails(ICD Derived attributes) using Claim ID
+```{r}
+InPatientFinal <- left_join(InPatientDetails,InPatientClaims)
+str(InPatientFinal)
+nrow(InPatientFinal)
+nrow(TrainBeneficiary)
+#levels(TrainBeneficiary$BeneID)
+```
+#### Left join InPatientDetails with Beneficiary details using Beneficiary ID.
+```{r}
+TrainInFinal <- left_join(InPatientFinal,TrainBeneficiary)
+
+InPatientFinalTest <- left_join(InPatientDetailsTest,InPatientClaimsTest)
+str(InPatientFinalTest)
+nrow(InPatientFinalTest)
+
+TestInFinal <- left_join(InPatientFinalTest,TestBeneficiary)
+```
+#### Do Similar Processing for Out Patient Data
+#### Derive new attributes by converting ICD Diagnostic codes and Procedure  codes
+```{r}
+ClaimDiagCodesOut <- TrainOutpatient[,c(2,10,11,12,13,14,15,16,17,18,19,27)]
+#ClaimDiagCodesOut
+ClaimDiagCodesOutlong <- wide_to_long(ClaimDiagCodesOut)
+ClaimDiagsOut <- as.data.frame(icd9_comorbid_ahrq(ClaimDiagCodesOutlong))
+nrow(ClaimDiagsOut)
+nrow(TrainOutpatient)
+str(ClaimDiagsOut)
+
+ClaimDiagTestOut <- TestOutpatient[,c(2,10,11,12,13,14,15,16,17,18,19,27)]
+#ClaimDiagCodesOut
+ClaimDiagTestOutlong <- wide_to_long(ClaimDiagTestOut)
+ClaimDiagsTestOut <- as.data.frame(icd9_comorbid_ahrq(ClaimDiagTestOutlong))
+nrow(ClaimDiagsTestOut)
+nrow(TestOutpatient)
+str(ClaimDiagsTestOut)
+
+ClaimProcCodesOut <- TrainOutpatient[,c(2,20,21,22,23,24,25)]
+str(ClaimProcCodesOut)
+ClaimProcCodesOut <- apply(ClaimProcCodesOut,2,as.character)
+ClaimProcCodesOut <- as.data.frame(apply(ClaimProcCodesOut,2,function(x) as.factor(x)),stringsAsFactors=TRUE)
+ClaimProcCodesOutlong <- wide_to_long(ClaimProcCodesOut,icd_labels = c("ClmProcedureCode_1","ClmProcedureCode_2","ClmProcedureCode_3","ClmProcedureCode_4","ClmProcedureCode_5","ClmProcedureCode_6"))
+#ClaimProcCodeslong
+ClaimProcsOut <- as.data.frame(icd9_comorbid_pccc_dx(ClaimProcCodesOutlong))
+str(ClaimDiagsOut)
+ClaimDiagsOut$ClaimID <- row.names(ClaimDiagsOut)
+ClaimProcsOut$ClaimID <- row.names(ClaimProcsOut)
+str(ClaimDiagsOut)
+
+
+ClaimProcTestOut <- TestOutpatient[,c(2,20,21,22,23,24,25)]
+str(ClaimProcTestOut)
+ClaimProcTestOut <- apply(ClaimProcTestOut,2,as.character)
+ClaimProcTestOut <- as.data.frame(apply(ClaimProcTestOut,2,function(x) as.factor(x)),stringsAsFactors=TRUE)
+ClaimProcTestOutlong <- wide_to_long(ClaimProcTestOut,icd_labels = c("ClmProcedureCode_1","ClmProcedureCode_2","ClmProcedureCode_3","ClmProcedureCode_4","ClmProcedureCode_5","ClmProcedureCode_6"))
+#ClaimProcCodeslong
+ClaimProcsTestOut <- as.data.frame(icd9_comorbid_pccc_dx(ClaimProcTestOutlong))
+#str(ClaimDiagsOut)
+ClaimDiagsOut$ClaimID <- row.names(ClaimDiagsOut)
+ClaimProcsOut$ClaimID <- row.names(ClaimProcsOut)
+
+ClaimDiagsTestOut$ClaimID <- row.names(ClaimDiagsTestOut)
+ClaimProcsTestOut$ClaimID <- row.names(ClaimProcsTestOut)
+#str(ClaimDiagsOut)
+
+library(dplyr)
+OutPatientClaims <- left_join(ClaimDiagsOut,ClaimProcsOut)
+OutPatientClaimsTest <- left_join(ClaimDiagsTestOut,ClaimProcsTestOut)
+#str(OutPatientClaims)
+#nrow(OutPatientClaims)
+```
+#### Compare Structure of InPatient data and outpatient data
+#### Add new dummy Attributes to Out patient to make it similar to Inpatient
+
+```{r}
+OutPatientDetails <- TrainOutpatient[,c(1,2,3,4,5,6,7,8,9,26)]
+OutPatientDetailsTest <- TestOutpatient[,c(1,2,3,4,5,6,7,8,9,26)]
+str(InPatientDetails)
+str(OutPatientDetails)
+```
+
+```{r}
+OutPatientDetails$DiagnosisGroupCode <- 'A'
+OutPatientDetails$AdmitDays <- 0
+OutPatientDetailsTest$DiagnosisGroupCode <- 'A'
+OutPatientDetailsTest$AdmitDays <- 0
+```
+#### Merge Out patient details with Beneficiary details
+```{r}
+OutPatientFinal <- left_join(OutPatientDetails,OutPatientClaims)
+str(OutPatientFinal)
+nrow(OutPatientFinal)
+nrow(TrainBeneficiary)
+#levels(TrainBeneficiary$BeneID)
+
+TrainOutFinal <- left_join(OutPatientFinal,TrainBeneficiary)
+nrow(TrainOutFinal)
+
+OutPatientFinalTest <- left_join(OutPatientDetailsTest,OutPatientClaimsTest)
+str(OutPatientFinalTest)
+nrow(OutPatientFinalTest)
+nrow(TestBeneficiary)
+#levels(TrainBeneficiary$BeneID)
+
+TestOutFinal <- left_join(OutPatientFinalTest,TestBeneficiary)
+nrow(TestOutFinal)
+
+str(TrainInFinal)
+str(TrainOutFinal)
+```
+##Add new Attribute AdmitType to differentiate InPatient and OutPatient 
+## data and merge them row wise 
+```{r}
+TrainInFinal$AdmitType <- "InPatient" 
+TrainOutFinal$AdmitType <- "OutPatient"
+
+FinalData <- rbind(TrainInFinal,TrainOutFinal)
+nrow(FinalData)
+
+TestInFinal$AdmitType <- "InPatient" 
+TestOutFinal$AdmitType <- "OutPatient"
+
+FinalDataTest <- rbind(TestInFinal,TestOutFinal)
+nrow(FinalDataTest)
+```
+#### Read Provider Data and Get Final Train Data
+```{r}
+TrainProviders= read.csv("Train-1542865627584.csv",header = T)
+head(TrainProviders)
+
+TrainFinal <- left_join(FinalData,TrainProviders)
+nrow(TrainFinal)
+
+table(TrainFinal$PotentialFraud)
+
+#head(TrainFinal)
+str(TrainFinal)
+```
+
+#### Derive otherAttributes from Final Data
+#### Drop Beneficiary ID,Claim ID and Derive Claim Days using ClaimStart date and ClaimEnddate
+```{r}
+TrainFinal$BeneID <- NULL
+TrainFinal$ClaimID <- NULL
+
+FinalDataTest$BeneID <- NULL
+FinalDataTest$ClaimID <- NULL
+
+TrainFinal$ClaimStartDt <- as.Date(TrainFinal$ClaimStartDt,format="%m/%d/%Y")
+TrainFinal$ClaimEndDt <- as.Date(TrainFinal$ClaimEndDt,format = "%m/%d/%Y")
+
+TrainFinal$ClaimDays <- difftime(TrainFinal$ClaimEndDt,TrainFinal$ClaimStartDt,units=c("days"))
+
+FinalDataTest$ClaimStartDt <- as.Date(FinalDataTest$ClaimStartDt,format="%Y-%m-%d")
+FinalDataTest$ClaimEndDt <- as.Date(FinalDataTest$ClaimEndDt,format = "%Y-%m-%d")
+
+FinalDataTest$ClaimDays <- difftime(FinalDataTest$ClaimEndDt,FinalDataTest$ClaimStartDt,units=c("days"))
+```
+#### Discretize DiagnosisGroupCode Attribute using domain knowledge
+#### All DRG codes can be grouped into 30 categories by using below ranges each range belong to a particular category.
+#### Using Group code '1001' for Out patient and '1002' for 'OTH'
+```{r}
+
+TrainFinal$Provider <- as.factor(TrainFinal$Provider)
+#table(FinalDataTest$DiagnosisGroupCode)
+library(gdata)
+TrainFinal$DiagnosisGroupCode <- as.character(TrainFinal$DiagnosisGroupCode)
+TrainFinal[(trim(TrainFinal$DiagnosisGroupCode) %in% ('A')),"DiagnosisGroupCode"] <- "1001"
+TrainFinal[(TrainFinal$DiagnosisGroupCode %in% ('OTH')),"DiagnosisGroupCode"] <- "1002"
+TrainFinal$DiagnosisGroupCode <- as.integer(TrainFinal$DiagnosisGroupCode)
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 1 &
+             TrainFinal$DiagnosisGroupCode <= 17),"DiagnosisGroupCode"] <- 0
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 20 &
+              TrainFinal$DiagnosisGroupCode <= 103),"DiagnosisGroupCode"] <- 1
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 113 &
+              TrainFinal$DiagnosisGroupCode <= 125),"DiagnosisGroupCode"] <- 2
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 129 &
+              TrainFinal$DiagnosisGroupCode <= 159),"DiagnosisGroupCode"] <- 3
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 163 &
+              TrainFinal$DiagnosisGroupCode <= 208),"DiagnosisGroupCode"] <- 4
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 215 &
+              TrainFinal$DiagnosisGroupCode <= 316),"DiagnosisGroupCode"] <- 5
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 326 &
+              TrainFinal$DiagnosisGroupCode <= 395),"DiagnosisGroupCode"] <- 6
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 405 &
+              TrainFinal$DiagnosisGroupCode <= 446),"DiagnosisGroupCode"] <- 7
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 453 &
+              TrainFinal$DiagnosisGroupCode <= 566),"DiagnosisGroupCode"] <- 8
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 570 &
+              TrainFinal$DiagnosisGroupCode <= 607),"DiagnosisGroupCode"] <- 9
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 614 &
+              TrainFinal$DiagnosisGroupCode <= 645),"DiagnosisGroupCode"] <- 10
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 652 &
+              TrainFinal$DiagnosisGroupCode <= 700),"DiagnosisGroupCode"] <- 11
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 707 &
+              TrainFinal$DiagnosisGroupCode <= 730),"DiagnosisGroupCode"] <- 12
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 734 &
+              TrainFinal$DiagnosisGroupCode <= 761),"DiagnosisGroupCode"] <- 13
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 765 &
+              TrainFinal$DiagnosisGroupCode <= 782),"DiagnosisGroupCode"] <- 14
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 789 &
+              TrainFinal$DiagnosisGroupCode <= 795),"DiagnosisGroupCode"] <- 15
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 799 &
+              TrainFinal$DiagnosisGroupCode <= 816),"DiagnosisGroupCode"] <- 16
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 820 &
+              TrainFinal$DiagnosisGroupCode <= 849),"DiagnosisGroupCode"] <- 17
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 853 &
+              TrainFinal$DiagnosisGroupCode <= 872),"DiagnosisGroupCode"] <- 18
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 867 &
+              TrainFinal$DiagnosisGroupCode <= 887),"DiagnosisGroupCode"] <- 19
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 894 &
+              TrainFinal$DiagnosisGroupCode <= 897),"DiagnosisGroupCode"] <- 20
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 901 &
+              TrainFinal$DiagnosisGroupCode <= 923),"DiagnosisGroupCode"] <- 21
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 927 &
+              TrainFinal$DiagnosisGroupCode <= 935),"DiagnosisGroupCode"] <- 22
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 939 &
+              TrainFinal$DiagnosisGroupCode <= 951),"DiagnosisGroupCode"] <- 23
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 955 &
+              TrainFinal$DiagnosisGroupCode <= 965),"DiagnosisGroupCode"] <- 24
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 969 &
+              TrainFinal$DiagnosisGroupCode <= 977),"DiagnosisGroupCode"] <- 25
+TrainFinal[(TrainFinal$DiagnosisGroupCode >= 981 &
+              TrainFinal$DiagnosisGroupCode <= 989),"DiagnosisGroupCode"] <- 26
+TrainFinal[TrainFinal$DiagnosisGroupCode %in% (998),"DiagnosisGroupCode"] <- 27
+TrainFinal[TrainFinal$DiagnosisGroupCode %in% (999),"DiagnosisGroupCode"] <- 28
+#table(TrainFinal$DiagnosisGroupCode)
+
+TrainFinal$DiagnosisGroupCode <- as.character(TrainFinal$DiagnosisGroupCode)
+TrainFinal$DiagnosisGroupCode <- as.factor(TrainFinal$DiagnosisGroupCode)
+TrainFinal$AdmitDays <- as.integer(TrainFinal$AdmitDays)
+```
+```{r}
+sum(is.na(FinalDataTest$DiagnosisGroupCode))
+FinalDataTest$DiagnosisGroupCode <- as.character(FinalDataTest$DiagnosisGroupCode)
+FinalDataTest[(trim(FinalDataTest$DiagnosisGroupCode) %in% ('A')),"DiagnosisGroupCode"] <- "1001"
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode %in% ('OTH')),"DiagnosisGroupCode"] <- "1002"
+#table(FinalDataTest$DiagnosisGroupCode)
+FinalDataTest$DiagnosisGroupCode <- as.integer(FinalDataTest$DiagnosisGroupCode)
+```
+```{r}
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 1 &
+             FinalDataTest$DiagnosisGroupCode <= 17),"DiagnosisGroupCode"] <- 0
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 20 &
+              FinalDataTest$DiagnosisGroupCode <= 103),"DiagnosisGroupCode"] <- 1
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 113 &
+              FinalDataTest$DiagnosisGroupCode <= 125),"DiagnosisGroupCode"] <- 2
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 129 &
+              FinalDataTest$DiagnosisGroupCode <= 159),"DiagnosisGroupCode"] <- 3
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 163 &
+              FinalDataTest$DiagnosisGroupCode <= 208),"DiagnosisGroupCode"] <- 4
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 215 &
+              FinalDataTest$DiagnosisGroupCode <= 316),"DiagnosisGroupCode"] <- 5
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 326 &
+              FinalDataTest$DiagnosisGroupCode <= 395),"DiagnosisGroupCode"] <- 6
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 405 &
+              FinalDataTest$DiagnosisGroupCode <= 446),"DiagnosisGroupCode"] <- 7
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 453 &
+              FinalDataTest$DiagnosisGroupCode <= 566),"DiagnosisGroupCode"] <- 8
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 570 &
+              FinalDataTest$DiagnosisGroupCode <= 607),"DiagnosisGroupCode"] <- 9
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 614 &
+              FinalDataTest$DiagnosisGroupCode <= 645),"DiagnosisGroupCode"] <- 10
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 652 &
+              FinalDataTest$DiagnosisGroupCode <= 700),"DiagnosisGroupCode"] <- 11
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 707 &
+              FinalDataTest$DiagnosisGroupCode <= 730),"DiagnosisGroupCode"] <- 12
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 734 &
+              FinalDataTest$DiagnosisGroupCode <= 761),"DiagnosisGroupCode"] <- 13
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 765 &
+              FinalDataTest$DiagnosisGroupCode <= 782),"DiagnosisGroupCode"] <- 14
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 789 &
+              FinalDataTest$DiagnosisGroupCode <= 795),"DiagnosisGroupCode"] <- 15
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 799 &
+              FinalDataTest$DiagnosisGroupCode <= 816),"DiagnosisGroupCode"] <- 16
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 820 &
+              FinalDataTest$DiagnosisGroupCode <= 849),"DiagnosisGroupCode"] <- 17
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 853 &
+              FinalDataTest$DiagnosisGroupCode <= 872),"DiagnosisGroupCode"] <- 18
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 867 &
+              FinalDataTest$DiagnosisGroupCode <= 887),"DiagnosisGroupCode"] <- 19
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 894 &
+              FinalDataTest$DiagnosisGroupCode <= 897),"DiagnosisGroupCode"] <- 20
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 901 &
+              FinalDataTest$DiagnosisGroupCode <= 923),"DiagnosisGroupCode"] <- 21
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 927 &
+              FinalDataTest$DiagnosisGroupCode <= 935),"DiagnosisGroupCode"] <- 22
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 939 &
+              FinalDataTest$DiagnosisGroupCode <= 951),"DiagnosisGroupCode"] <- 23
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 955 &
+              FinalDataTest$DiagnosisGroupCode <= 965),"DiagnosisGroupCode"] <- 24
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 969 &
+              FinalDataTest$DiagnosisGroupCode <= 977),"DiagnosisGroupCode"] <- 25
+FinalDataTest[(FinalDataTest$DiagnosisGroupCode >= 981 &
+              FinalDataTest$DiagnosisGroupCode <= 989),"DiagnosisGroupCode"] <- 26
+FinalDataTest[FinalDataTest$DiagnosisGroupCode %in% (998),"DiagnosisGroupCode"] <- 27
+FinalDataTest[FinalDataTest$DiagnosisGroupCode %in% (999),"DiagnosisGroupCode"] <- 28
+table(FinalDataTest$DiagnosisGroupCode)
+
+FinalDataTest$DiagnosisGroupCode <- as.character(FinalDataTest$DiagnosisGroupCode)
+FinalDataTest$DiagnosisGroupCode <- as.factor(FinalDataTest$DiagnosisGroupCode)
+FinalDataTest$AdmitDays <- as.integer(FinalDataTest$AdmitDays)
+
+```
+
+```{r}
+#TrainFinal[,11:51] <- apply(TrainFinal[,11:51],2,as.character)
+#TrainFinal[,11:51]<- as.data.frame(apply(TrainFinal[,11:51],2,function(x) #as.factor(x)),stringsAsFactors=TRUE)
+
+TrainFinal$AdmitType <- as.factor(TrainFinal$AdmitType)
+TrainFinal$ClaimDays <- as.integer(TrainFinal$ClaimDays)
+TrainFinal$ClaimStartDt <- NULL
+TrainFinal$ClaimEndDt <- NULL
+TrainFinal$AttendingPhysician <- NULL
+TrainFinal$OperatingPhysician <- NULL
+TrainFinal$OtherPhysician <- NULL
+
+FinalDataTest$AdmitType <- as.factor(FinalDataTest$AdmitType)
+FinalDataTest$ClaimDays <- as.integer(FinalDataTest$ClaimDays)
+FinalDataTest$ClaimStartDt <- NULL
+FinalDataTest$ClaimEndDt <- NULL
+FinalDataTest$AttendingPhysician <- NULL
+FinalDataTest$OperatingPhysician <- NULL
+FinalDataTest$OtherPhysician <- NULL
+```
+
+#### Fill 'NA' in DeductibleAmtPaid field with mode => '1068'  
+```{r}
+sum(is.na(TrainFinal))
+sum(is.na(TrainFinal$DeductibleAmtPaid))
+sum(is.na(FinalDataTest$DeductibleAmtPaid))
+sum(is.na(FinalDataTest))
+TrainFinal[is.na(TrainFinal$DeductibleAmtPaid),c("DeductibleAmtPaid")]<-'1068'
+FinalDataTest[is.na(FinalDataTest$DeductibleAmtPaid),c("DeductibleAmtPaid")]<-'1068'
+
+write.csv(TrainFinal,"TrainMerge.csv")
+write.csv(FinalDataTest,"TestMergedFinal.csv")
+
+```
+# Data Exploration and Visualization
+## Data Exploration using SQL
+```{r}
+library(sqldf)
+TrainFinal$renal2 <- TrainFinal$renal
+TrainFinal$renal <- NULL
+sqldf("Select count(*) from TrainFinal")
+#str(TrainFinal)
+```
+#### Assuming all transactions by a fradulent provider as fraud for Analysis purposes.
+### Insight1
+  *Diagnostice Group code '2' has highest Fraud percentage.*
+
+```{r}
+a = sqldf("Select DiagnosisGroupCode,count(DiagnosisGroupCode) as Fraudcount from TrainFinal 
+       where PotentialFraud = 'Yes' 
+          group by DiagnosisGroupCode ")
+b = sqldf("Select DiagnosisGroupCode,count(DiagnosisGroupCode) as Totalcount from TrainFinal 
+       group by DiagnosisGroupCode ")
+c= sqldf("Select a.DiagnosisGroupcode,(Fraudcount*1.0/Totalcount*1.0)*100 
+           as percent from a,b where
+      a.DiagnosisGroupcode = b.DiagnosisGroupcode")
+library(ggplot2)
+ggplot(c, aes(x = DiagnosisGroupCode, y = percent)) +
+  geom_bar(stat = "identity") + xlab("# Diagnosis Group Code") + ylab("# Fraud Percentage") + ggtitle("# Percentage of Fraud by Diagnostic Group")
+```
+
+### Insight 2
+   * From above and below graph, Fraud percentage is high where number of providers for the given Diagnostic Group code are few *
+```{r}
+e =sqldf("Select DiagnosisGroupcode,count(distinct(Provider)) as count from 
+       TrainFinal where PotentialFraud = 'Yes' group by DiagnosisGroupcode")
+ggplot(e, aes(x = DiagnosisGroupCode, y = count)) +
+  geom_bar(stat = "identity") + xlab("# Diagnosis Group Code") + ylab("# Number of Providers") + ggtitle("# Number of Providers by Diagnostic Group code ")
+```
+
+### Insight 3
+    *Fraud percentage is high in States '46','5' etc*
+```{r}
+stateFraud = sqldf("Select State,count(*) as Fraudcount from TrainFinal 
+       where PotentialFraud = 'Yes' 
+          group by State ")
+stateTotal = sqldf("Select State,count(*) as Totalcount from TrainFinal 
+       group by State")
+f =sqldf("Select a.State,(Fraudcount*1.0/Totalcount*1.0)*100 as percent from stateFraud a,stateTotal b where
+      a.State = b.State order by percent desc limit 15")
+ggplot(f, aes(x = State, y = percent)) +
+  geom_bar(stat = "identity") + xlab("# State") + ylab("# Fraud Percentage") + ggtitle("# Fraud percentage by State ")
+```
+
+### Insight 4
+     *Fraud percentage is low in states '35','51'*
+```{r}
+g =sqldf("Select a.State,(Fraudcount*1.0/Totalcount*1.0)*100 as percent from stateFraud a,stateTotal b where
+      a.State = b.State order by percent asc limit 15")
+ggplot(g, aes(x = State, y = percent)) +
+  geom_bar(stat = "identity") + xlab("# State") + ylab("# Fraud Percentage") + ggtitle("# Fraud percentage by State ascending order")
+```
+
+### Insight 5
+    * Fraud percentage is significantly higher in County 200 for State '5' and County 170 for state '46'*
+```{r}
+h = sqldf("Select county,count(*) as c from TrainFinal where 
+       PotentialFraud = 'Yes' and trim(State) = '5' group by State,county
+       order by c desc limit 15")
+ggplot(h, aes(x = County, y = c)) +
+  geom_bar(stat = "identity") +  xlab("# County") + ylab("# Fraud Percentage") + ggtitle("# Fraud percentage for State '5' by county")
+```
+
+```{r}
+h = sqldf("Select county,count(*) as c from TrainFinal where 
+       PotentialFraud = 'Yes' and trim(State) = '46' group by State,county
+       order by c desc limit 15")
+ggplot(h, aes(x = County, y = c)) +
+  geom_bar(stat = "identity") +  xlab("# County") + ylab("# Fraud Percentage") + ggtitle("# Fraud percentage for State '46' by county")
+```
+
+### Insight 6
+   * Fraud percentage is higher when Admit Days < 10 *
+```{r}
+TrainFinalAD <- sqldf("Select * from TrainFinal where AdmitDays > 0")
+table(TrainFinalAD$AdmitDays)
+
+ggplot(TrainFinalAD,aes(x=AdmitDays)) + geom_freqpoly(aes(color=PotentialFraud),binwidth=2)+
+xlab("# Admit Days") + ylab("# Fraud count") + ggtitle("# Fraud Distribution by Admit Days")
+```
+
+### Insight 7
+   *Fraud percentage is relatively low when claim days between 17 and 23*
+```{r}
+TrainFinalCL <- sqldf("Select * from TrainFinal where ClaimDays > 0")
+table(TrainFinalCL$ClaimDays)
+
+ggplot(TrainFinalCL,aes(x=ClaimDays)) + geom_freqpoly(aes(color=PotentialFraud),binwidth=2)+
+xlab("# Claim Days") + ylab("# Fraud count") + ggtitle("# Fraud Distribution by Claim Days")
+```
+
+### Insight 8
+   *Probability of fraud is less when beneficiary Age > 75*
+```{r}
+X = sqldf("Select * from TrainFinal")
+ggplot(X,aes(x=Age)) + geom_freqpoly(aes(color=PotentialFraud),binwidth=2)
+```
+
+### Distribution of Amount Attributes for Discretization
+```{r}
+ggplot(X,aes(x=OPAnnualReimbursementAmt)) + geom_freqpoly(aes(color=PotentialFraud),binwidth=2)
+```
+```{r}
+ggplot(X,aes(x=InscClaimAmtReimbursed)) + geom_freqpoly(aes(color=PotentialFraud),binwidth=2)
+```
+```{r}
+ggplot(X,aes(x=OPAnnualDeductibleAmt)) + geom_freqpoly(aes(color=PotentialFraud),binwidth=2)
+```
+```{r}
+ggplot(X,aes(x=IPAnnualDeductibleAmt)) + geom_freqpoly(aes(color=PotentialFraud),binwidth=2)
+```
+
+## Model Building and Evaluation is done using Python, Please refer the Jupyter notebook for Remaining sections of report.Thanks! 
+
